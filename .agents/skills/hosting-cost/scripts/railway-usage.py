@@ -76,7 +76,7 @@ METRICS = """query($e:String!,$s:String!,$t:DateTime!){ metrics(environmentId:$e
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--days", type=int, default=7)
+    ap.add_argument("--days", type=float, default=7, help="window; fractions work, e.g. 0.125 = 3h to measure just after a change")
     ap.add_argument("--project", help="only this project (exact name)")
     ap.add_argument("--mem-price", type=float, default=10.0, help="$ per GB-month (default 10)")
     ap.add_argument("--cpu-price", type=float, default=20.0, help="$ per vCPU-month (default 20)")
@@ -122,8 +122,11 @@ def main() -> None:
               f"  {str(r['sleep'] or False):<6} {src}")
         if r["startCommand"]:
             print(f"{'':<42}start: {r['startCommand'][:110]}")
-    print(f"\nTOTAL ~${sum(r['usd_month'] for r in rows):.2f}/month over the last {a.days} days "
+    print(f"\nTOTAL ~${sum(r['usd_month'] for r in rows):.2f}/month over the last {a.days:g} days "
           f"(memory ${a.mem_price}/GB-mo, CPU ${a.cpu_price}/vCPU-mo; excludes disk, network and plan fee)")
+    if any(r["sleep"] for r in rows):
+        print("Sleeping services: metrics can repeat the last reading while the container is stopped, so their\n"
+              "$/mo is an upper bound. Count `Starting Container`/`Stopping Container` pairs in the logs for real awake time.")
 
 
 if __name__ == "__main__":
