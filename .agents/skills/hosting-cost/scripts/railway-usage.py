@@ -49,7 +49,7 @@ def gql(query: str, variables: dict) -> dict:
             "Authorization": "Bearer " + token(),
             # Without a User-Agent, Cloudflare in front of the API answers 403,
             # which reads like a permissions problem and is not one.
-            "User-Agent": "railway-cost-skill",
+            "User-Agent": "hosting-cost-skill",
         },
     )
     try:

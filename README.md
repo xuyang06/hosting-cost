@@ -1,35 +1,39 @@
-# railway-cost
+# hosting-cost
 
-An agent skill for Claude Code and Codex that finds what a Railway account is
-paying for and cuts it safely.
+An agent skill for Claude Code and Codex. It finds out what an app's hosting
+really costs, compares the options that could run the app, and cuts the bill
+on whichever one you choose.
 
-On a quiet app, Railway's bill is mostly idle RAM, not traffic. This skill
-measures every service on the account, ranks them by $/month, and walks through
-the usual culprits in order of payoff:
+1. **Measure** what runs today, process by process: RAM, whether it must
+   always run, whether it polls, whether it needs a disk. On a quiet app the
+   bill is mostly idle memory, not traffic.
+2. **Fix the config first.** Moving a misconfigured app moves the waste with
+   it. A database cache sized at 1 GB for 250 MB of data costs more than any
+   platform difference.
+3. **Compare solutions** using current official pricing, fetched and dated,
+   never quoted from memory. It rules out options that can't run the app,
+   prices the measured footprint, and counts migration and ops time. The
+   result is one recommendation and the point at which it would change.
+4. **Optimize** on the chosen platform one change at a time, then verify the
+   running process, not the API's `true`.
 
-- **MySQL near 1 GB with little data.** Railway's MySQL template hardcodes
-  `--innodb-buffer-pool-size=1G` in the start command.
-- **Duplicate idle environments**, such as a demo or staging copy.
-- **Always-on web services** that could use App Sleeping.
-- **Floating image tags** that upgrade silently on restart.
-
-It changes one thing at a time, dry-runs by default, and verifies the running
-process rather than the API's `true`. Before deleting an environment, it backs
-up and restore-tests the data.
+It includes known platform traps (`references/platform-traps.md`), such as
+idle reclamation on Oracle's free tier, Render's expiring free Postgres and
+Fly volumes billing while machines are stopped. Railway has a full playbook
+and scripts.
 
 ## Install
 
-Copy or symlink the skill folder into your agent's skills directory:
-
 ```sh
-git clone https://github.com/xuyang06/railway-cost
-ln -s "$PWD/railway-cost/.agents/skills/railway-cost" ~/.claude/skills/railway-cost   # Claude Code
-ln -s "$PWD/railway-cost/.agents/skills/railway-cost" ~/.agents/skills/railway-cost   # Codex
+git clone https://github.com/xuyang06/hosting-cost
+ln -s "$PWD/hosting-cost/.agents/skills/hosting-cost" ~/.claude/skills/hosting-cost   # Claude Code
+ln -s "$PWD/hosting-cost/.agents/skills/hosting-cost" ~/.agents/skills/hosting-cost   # Codex
 ```
 
-Then ask "why is my Railway bill so high?"
+Then ask "why is my hosting bill so high?" or "is there a cheaper way to host
+this?"
 
-## Scripts
+## Railway scripts
 
 Both need `railway login` (or `RAILWAY_API_TOKEN`) and only the Python standard
 library.
