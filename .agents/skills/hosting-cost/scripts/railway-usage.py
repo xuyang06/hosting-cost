@@ -18,6 +18,7 @@ import argparse
 import datetime
 import json
 import os
+import subprocess
 import sys
 import urllib.error
 import urllib.request
@@ -40,7 +41,17 @@ def token() -> str:
     return tok
 
 
-def gql(query: str, variables: dict) -> dict:
+def refresh_cli_token() -> bool:
+    """The CLI's OAuth token is short-lived and only refreshed when `railway` runs."""
+    if os.environ.get("RAILWAY_API_TOKEN"):
+        return False
+    try:
+        return subprocess.run(["railway", "whoami"], capture_output=True, timeout=60).returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
+def gql(query: str, variables: dict, retried: bool = False) -> dict:
     req = urllib.request.Request(
         API,
         json.dumps({"query": query, "variables": variables}).encode(),
@@ -55,10 +66,14 @@ def gql(query: str, variables: dict) -> dict:
     try:
         body = json.load(urllib.request.urlopen(req, timeout=60))
     except urllib.error.HTTPError as e:
+        if e.code == 401 and not retried and refresh_cli_token():
+            return gql(query, variables, retried=True)
         hint = " Session expired? Run `railway login`." if e.code in (401, 403) else ""
         sys.exit(f"Railway API HTTP {e.code}.{hint}")
     if body.get("errors"):
         msg = body["errors"][0].get("message", "")
+        if "authorized" in msg.lower() and not retried and refresh_cli_token():
+            return gql(query, variables, retried=True)
         hint = " Run `railway login`." if "auth" in msg.lower() else ""
         sys.exit(f"Railway API error: {msg}.{hint}")
     return body["data"]
@@ -69,8 +84,8 @@ PROJECTS = """{ me { workspaces { projects { edges { node { id name
     serviceId serviceName startCommand numReplicas sleepApplication source { image repo } } } } } } }
 } } } } } }"""
 
-METRICS = """query($e:String!,$s:String!,$t:DateTime!){ metrics(environmentId:$e, serviceId:$s,
-  startDate:$t, measurements:[MEMORY_USAGE_GB, CPU_USAGE], sampleRateSeconds:3600){
+METRICS = """query($e:String!,$s:String!,$t:DateTime!,$r:Int!){ metrics(environmentId:$e, serviceId:$s,
+  startDate:$t, measurements:[MEMORY_USAGE_GB, CPU_USAGE], sampleRateSeconds:$r){
   measurement values{ value } } }"""
 
 
@@ -84,6 +99,8 @@ def main() -> None:
     a = ap.parse_args()
 
     start = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=a.days)).isoformat()
+    # Hourly samples over a short window return one odd point; aim for >= 24 samples.
+    rate = int(min(3600, max(60, a.days * 86_400 / 24)))
     rows = []
     for ws in gql(PROJECTS, {})["me"]["workspaces"]:
         for p in ws["projects"]["edges"]:
@@ -94,7 +111,7 @@ def main() -> None:
                 e = e["node"]
                 for si in e["serviceInstances"]["edges"]:
                     si = si["node"]
-                    m = gql(METRICS, {"e": e["id"], "s": si["serviceId"], "t": start})["metrics"]
+                    m = gql(METRICS, {"e": e["id"], "s": si["serviceId"], "t": start, "r": rate})["metrics"]
                     series = {x["measurement"]: [v["value"] for v in x["values"]] for x in m}
                     mem, cpu = series.get("MEMORY_USAGE_GB", []), series.get("CPU_USAGE", [])
                     mem_gb = sum(mem) / len(mem) if mem else 0.0
